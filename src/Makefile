@@ -1,5 +1,5 @@
 
-CXXFLAGS = -Wall -g
+CXXFLAGS = -Wall -g -O2
 LDFLAGS = -levent_core -lprotobuf
 
 all: libevproto2.a

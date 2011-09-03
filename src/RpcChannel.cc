@@ -59,7 +59,7 @@ RpcChannel::RpcChannel(struct event_base* base, int fd, const std::map<std::stri
 RpcChannel::~RpcChannel()
 {
   bufferevent_free(evConn_);
-  printf("~RpcChannel()\n");
+  // printf("~RpcChannel()\n");
 }
 
 void RpcChannel::setDisconnectCb(disconnect_cb cb, void* ptr)

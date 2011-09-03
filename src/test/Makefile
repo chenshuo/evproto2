@@ -1,4 +1,4 @@
-CXXFLAGS = -Wall -g
+CXXFLAGS = -Wall -g -O2
 LDFLAGS = -levent_core -levent_pthreads -lprotobuf -levproto2 -L..
 
 all: client server
