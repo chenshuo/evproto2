@@ -178,7 +178,7 @@ void RpcChannel::sendMessage(const RpcMessage& message)
 void RpcChannel::connectFailed()
 {
   connectFailed_ = true;
- // FIXME
+  disconnected();
 }
 
 void RpcChannel::connected()

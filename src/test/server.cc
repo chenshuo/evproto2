@@ -22,10 +22,15 @@ class EchoServiceImpl : public EchoService
 
 }
 
-int main()
+int main(int argc, char* argv[])
 {
   evproto::EventLoop loop;
   evproto::RpcServer server(&loop, 8888);
+  if (argc > 1)
+  {
+    int numThreads = atoi(argv[1]);
+    server.setThreadNum(numThreads);
+  }
 
   echo::EchoServiceImpl impl;
   server.registerService(&impl);

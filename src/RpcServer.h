@@ -18,6 +18,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 namespace evproto
 {
@@ -31,20 +32,24 @@ class RpcServer
 {
  public:
   RpcServer(EventLoop* loop, int port);
+  ~RpcServer();
 
+  void setThreadNum(int numThreads);
   void registerService(gpb::Service*);
   void start();
 
  private:
-  static void newConnectionCallback(struct evconnlistener *listener,
-      evutil_socket_t fd, struct sockaddr *address, int socklen, void *ctx);
+  static void newConnectionCallback(struct evconnlistener* listener,
+      evutil_socket_t fd, struct sockaddr* address, int socklen, void* ctx);
   static void disconnectCallback(RpcChannel*, void* ctx);
+  static void* runLoop(void* ptr);
 
   void onConnect(evutil_socket_t fd);
   void onDisconnect(RpcChannel*);
 
-  EventLoop* loop_;
   struct evconnlistener* evListener_;
+  std::vector<struct event_base*> loops_;
+  int currLoop_;
   std::map<std::string, gpb::Service*> services_;
 
   muduo::MutexLock mutex_;
