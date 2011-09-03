@@ -27,11 +27,24 @@ void RpcServer::registerService(gpb::Service* service)
   services_[desc->full_name()] = service;
 }
 
-void RpcServer::onConnection(evutil_socket_t fd)
+void RpcServer::onConnect(evutil_socket_t fd)
 {
   struct event_base *base = evconnlistener_get_base(evListener_);
   RpcChannel* channel = new RpcChannel(base, fd, services_);
-  // FIXME
+  channel->setDisconnectCb(& RpcServer::disconnectCallback, this);
+
+  muduo::MutexLockGuard lock(mutex_);
+  channels_.insert(channel);
+}
+
+void RpcServer::onDisconnect(RpcChannel* channel)
+{
+  {
+  muduo::MutexLockGuard lock(mutex_);
+  int n = channels_.erase(channel);
+  assert(n == 1);
+  }
+  delete channel;
 }
 
 void RpcServer::newConnectionCallback(struct evconnlistener *listener,
@@ -40,5 +53,12 @@ void RpcServer::newConnectionCallback(struct evconnlistener *listener,
   printf("newConnectionCallback\n");
   RpcServer* self = static_cast<RpcServer*>(ctx);
   assert(self->evListener_ == listener);
-  self->onConnection(fd);
+  self->onConnect(fd);
+}
+
+void RpcServer::disconnectCallback(RpcChannel* channel, void* ctx)
+{
+  printf("disconnectCallback\n");
+  RpcServer* self = static_cast<RpcServer*>(ctx);
+  self->onDisconnect(channel);
 }

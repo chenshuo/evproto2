@@ -4,12 +4,42 @@
 #include <event2/buffer.h>
 #include <zlib.h>
 
+#include <event2/thread.h>
+
+#if !defined(LIBEVENT_VERSION_NUMBER) || LIBEVENT_VERSION_NUMBER < 0x02000a00
+#error "This version of Libevent is not supported; Get 2.0.10 or later."
+#endif
+
+struct InitObj
+{
+  InitObj()
+  {
+#if EVTHREAD_USE_PTHREADS_IMPLEMENTED
+  GOOGLE_CHECK_EQ(::evthread_use_pthreads(), 0);
+#endif
+
+#ifndef NDEBUG
+  // ::evthread_enable_lock_debuging();
+  // ::event_enable_debug_mode();
+#endif
+
+  GOOGLE_CHECK_EQ(LIBEVENT_VERSION_NUMBER, ::event_get_version_number())
+    << "libevent2 version number mismatch";
+  }
+};
+
+static InitObj initObj;
+
+#include "Codec-inl.h"
+
 using namespace evproto;
 using std::string;
 
 RpcChannel::RpcChannel(EventLoop* loop, const string& host, int port)
   : evConn_(bufferevent_socket_new(loop->eventBase(), -1, BEV_OPT_CLOSE_ON_FREE)),
-    connectFailed_(false)
+    connectFailed_(false),
+    disconnect_cb_(NULL),
+    ptr_(NULL)
 {
   bufferevent_setcb(evConn_, readCallback, NULL, eventCallback, this);
   bufferevent_socket_connect_hostname(evConn_, NULL, AF_INET, host.c_str(), port);
@@ -18,6 +48,8 @@ RpcChannel::RpcChannel(EventLoop* loop, const string& host, int port)
 RpcChannel::RpcChannel(struct event_base* base, int fd, const std::map<std::string, gpb::Service*>& services)
   : evConn_(bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE)),
     connectFailed_(false),
+    disconnect_cb_(NULL),
+    ptr_(NULL),
     services_(services)
 {
   bufferevent_setcb(evConn_, readCallback, NULL, eventCallback, this);
@@ -27,6 +59,13 @@ RpcChannel::RpcChannel(struct event_base* base, int fd, const std::map<std::stri
 RpcChannel::~RpcChannel()
 {
   bufferevent_free(evConn_);
+  printf("~RpcChannel()\n");
+}
+
+void RpcChannel::setDisconnectCb(disconnect_cb cb, void* ptr)
+{
+  disconnect_cb_ = cb;
+  ptr_ = ptr;
 }
 
 void RpcChannel::CallMethod(const gpb::MethodDescriptor* method,
@@ -52,78 +91,11 @@ void RpcChannel::CallMethod(const gpb::MethodDescriptor* method,
 void RpcChannel::onRead()
 {
   struct evbuffer* input = bufferevent_get_input(evConn_);
-  int readable = evbuffer_get_length(input);
-  while (readable >= 12)
+  ParseErrorCode errorCode = read(input, this);
+  if (errorCode != kNoError)
   {
-    int be32 = 0;
-    evbuffer_copyout(input, &be32, sizeof be32);
-    int len = ntohl(be32);
-    if (len > 64*1024*1024 || len < 8)
-    {
-      // FIXME: error kInvalidLength
-    }
-    else if (readable >= len + 4)
-    {
-      RpcMessage message;
-      const char* data = reinterpret_cast<char*>(evbuffer_pullup(input, len + 4));
-      ErrorCode errorCode = parse(data + 4, len, &message);
-      if (errorCode == kNoError)
-      {
-        onMessage(message);
-        evbuffer_drain(input, len + 4);
-        readable = evbuffer_get_length(input);
-      }
-      else
-      {
-        // FIXME: error
-      }
-    }
-    else
-    {
-      break;
-    }
+    // FIXME:
   }
-}
-RpcChannel::ErrorCode RpcChannel::parse(const char* buf, int len, RpcMessage* message)
-{
-  ErrorCode error = kNoError;
-
-  // check sum
-  int32_t be32 = 0;
-  memcpy(&be32, buf + len - 4, sizeof be32);
-  int32_t expectedCheckSum = ntohl(be32);
-  int32_t checkSum = static_cast<int32_t>(
-      ::adler32(1,
-                reinterpret_cast<const Bytef*>(buf),
-                len - 4));
-
-  if (checkSum == expectedCheckSum)
-  {
-    if (memcmp(buf, "RPC0", 4) == 0)
-    {
-      // parse from buffer
-      const char* data = buf + 4;
-      int32_t dataLen = len - 8;
-      if (message->ParseFromArray(data, dataLen))
-      {
-        error = kNoError;
-      }
-      else
-      {
-        error = kParseError;
-      }
-    }
-    else
-    {
-      error = kUnknownMessageType;
-    }
-  }
-  else
-  {
-    error = kCheckSumError;
-  }
-
-  return error;
 }
 
 void RpcChannel::onMessage(const RpcMessage& message)
@@ -200,38 +172,7 @@ void RpcChannel::doneCallback(::google::protobuf::Message* response, int64_t id)
 
 void RpcChannel::sendMessage(const RpcMessage& message)
 {
-  struct evbuffer* buf = evbuffer_new();
-  const int byte_size = message.ByteSize();
-  const int len = byte_size + 8; // RPC0 + adler32
-  const int total_len = len + 4; // length prepend
-  evbuffer_expand(buf, len + 4);
-  struct evbuffer_iovec vec;
-  evbuffer_reserve_space(buf, total_len, &vec, 1);
-
-  uint8_t* start = static_cast<uint8_t*>(vec.iov_base);
-  int len_be = htonl(len);
-  memcpy(start, &len_be, sizeof len_be);
-  start += 4;
-  memcpy(start, "RPC0", 4);
-  start += 4;
-  uint8_t* end = message.SerializeWithCachedSizesToArray(start);
-  assert (end - start == byte_size);
-  start += byte_size;
-
-  int32_t checkSum = static_cast<int32_t>(
-      ::adler32(1,
-	static_cast<const Bytef*>(vec.iov_base)+4,
-	byte_size + 4));
-
-  checkSum = htonl(checkSum);
-  memcpy(start, &checkSum, sizeof checkSum);
-  start += 4;
-
-  assert(start - static_cast<uint8_t*>(vec.iov_base) == total_len);
-  vec.iov_len = total_len;
-  evbuffer_commit_space(buf, &vec, 1);
-  bufferevent_write_buffer(evConn_, buf);
-  evbuffer_free(buf);
+  send(evConn_, message);
 }
 
 void RpcChannel::connectFailed()
@@ -245,6 +186,14 @@ void RpcChannel::connected()
   if (!connectFailed_)
   {
     bufferevent_enable(evConn_, EV_READ|EV_WRITE);
+  }
+}
+
+void RpcChannel::disconnected()
+{
+  if (disconnect_cb_)
+  {
+    disconnect_cb_(this, ptr_);
   }
 }
 
@@ -262,6 +211,11 @@ void RpcChannel::eventCallback(struct bufferevent* bev, short events, void* ptr)
   {
     printf("connected\n");
     self->connected();
+  }
+  else if (events & BEV_EVENT_EOF)
+  {
+    printf("disconnected\n");
+    self->disconnected();
   }
   else if (events & BEV_EVENT_ERROR)
   {

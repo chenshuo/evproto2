@@ -1,15 +1,17 @@
 CXXFLAGS = -Wall -g
-LDFLAGS = -levent_core -lprotobuf -levproto2 -L..
+LDFLAGS = -levent_core -levent_pthreads -lprotobuf -levproto2 -L..
 
 all: client server
 clean:
-	rm client server *.o *.pb.h *.pb.cc
+	rm client server core *.o *.pb.h *.pb.cc
 
 echo.pb.h echo.pb.cc: echo.proto
 	protoc --cpp_out . $<
 
 echo.pb.o: echo.pb.cc echo.pb.h
 	g++ $(CXXFLAGS) -c $<
+
+client.o server.o: ../libevproto2.a
 
 client.o: client.cc echo.pb.h
 	g++ $(CXXFLAGS) -c $<

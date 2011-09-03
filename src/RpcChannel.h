@@ -32,9 +32,13 @@ namespace gpb = ::google::protobuf;
 class RpcChannel : public gpb::RpcChannel
 {
  public:
+  typedef void (*disconnect_cb)(RpcChannel*, void* ptr);
+
   RpcChannel(EventLoop* loop, const std::string& host, int port);
   RpcChannel(struct event_base *base, int fd, const std::map<std::string, gpb::Service*>&);
   ~RpcChannel();
+
+  void setDisconnectCb(disconnect_cb cb, void* ptr);
 
   void CallMethod(const gpb::MethodDescriptor* method,
                   gpb::RpcController* controller,
@@ -42,25 +46,16 @@ class RpcChannel : public gpb::RpcChannel
                   gpb::Message* response,
                   gpb::Closure* done);
 
-  enum ErrorCode
-  {
-    kNoError = 0,
-    kInvalidLength,
-    kCheckSumError,
-    kInvalidNameLen,
-    kUnknownMessageType,
-    kParseError,
-  };
+  void onMessage(const RpcMessage&);
 
  private:
   void onRead();
-  static ErrorCode parse(const char* buf, int len, RpcMessage* message);
-  void onMessage(const RpcMessage&);
   void sendMessage(const RpcMessage&);
   void doneCallback(::google::protobuf::Message* response, int64_t id);
 
   void connectFailed();
   void connected();
+  void disconnected();
 
   static void readCallback(struct bufferevent *bev, void *ptr);
   static void eventCallback(struct bufferevent *bev, short events, void *ptr);
@@ -73,6 +68,9 @@ class RpcChannel : public gpb::RpcChannel
 
   struct bufferevent* evConn_;
   bool connectFailed_;
+  disconnect_cb disconnect_cb_;
+  void* ptr_;
+
   muduo::AtomicInt64 id_;
 
   muduo::MutexLock mutex_;

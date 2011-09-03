@@ -13,13 +13,17 @@
 #include <event2/listener.h>
 #include <google/protobuf/service.h>
 
+#include "muduo/Mutex.h"
+
 #include <map>
+#include <set>
 #include <string>
 
 namespace evproto
 {
 
 class EventLoop;
+class RpcChannel;
 
 namespace gpb = ::google::protobuf;
 
@@ -34,17 +38,17 @@ class RpcServer
  private:
   static void newConnectionCallback(struct evconnlistener *listener,
       evutil_socket_t fd, struct sockaddr *address, int socklen, void *ctx);
-  void onConnection(evutil_socket_t fd);
-/*
+  static void disconnectCallback(RpcChannel*, void* ctx);
 
-  void onMessage(const TcpConnectionPtr& conn,
-                 Buffer* buf,
-                 Timestamp time);
-*/
+  void onConnect(evutil_socket_t fd);
+  void onDisconnect(RpcChannel*);
 
   EventLoop* loop_;
   struct evconnlistener* evListener_;
   std::map<std::string, gpb::Service*> services_;
+
+  muduo::MutexLock mutex_;
+  std::set<RpcChannel*> channels_;
 };
 
 }
