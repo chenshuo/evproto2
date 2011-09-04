@@ -1,0 +1,65 @@
+package kvdb;
+//option py_generic_services = true;
+option cc_generic_services = true;
+option java_generic_services = true;
+option java_package = "com.google.code.leveldb.proto";
+option java_outer_classname = "LeveldbProto";
+
+enum Status
+{
+  OK = 0;
+  NOTFOUND = 1;
+};
+
+message GetRequest {
+  required string key = 1;
+}
+
+message GetResponse {
+  required Status status = 1;
+  optional string value = 2;
+}
+
+message PutRequest {
+  required string key = 1;
+  required string value = 2;
+}
+
+message PutResponse {
+  required Status status = 1;
+}
+
+message DeleteRequest {
+  required string key = 1;
+}
+
+message DeleteResponse {
+  required Status status = 1;
+}
+
+message WriteOperation {
+  enum Type
+  {
+    PUT = 1;
+    DELETE = 2;
+  }
+  required Type type = 1;
+  required string key = 2;
+  optional string value = 3;
+}
+
+message WriteRequest {
+  repeated WriteOperation operations = 1;
+}
+
+message WriteResponse {
+  required Status status = 1;
+}
+
+service LeveldbService {
+  rpc Get (GetRequest) returns (GetResponse);
+  rpc Put (PutRequest) returns (PutResponse);
+  rpc Delete (DeleteRequest) returns (DeleteResponse);
+  rpc Write (WriteRequest) returns (WriteResponse);
+}
+
