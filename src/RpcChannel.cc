@@ -81,11 +81,14 @@ void RpcChannel::CallMethod(const gpb::MethodDescriptor* method,
   message.set_service(method->service()->full_name());
   message.set_method(method->name());
   message.set_request(request->SerializeAsString()); // FIXME: error check
-  sendMessage(message);
 
+  {
   OutstandingCall out = { response, done };
   muduo::MutexLockGuard lock(mutex_);
   outstandings_[id] = out;
+  }
+
+  sendMessage(message);
 }
 
 void RpcChannel::onRead()
