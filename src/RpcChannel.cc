@@ -78,7 +78,7 @@ void RpcChannel::CallMethod(const gpb::MethodDescriptor* method,
   message.set_type(REQUEST);
   int64_t id = id_.incrementAndGet();
   message.set_id(id);
-  message.set_service(method->service()->full_name());
+  message.set_service(method->service()->name());
   message.set_method(method->name());
   message.set_request(request->SerializeAsString()); // FIXME: error check
 

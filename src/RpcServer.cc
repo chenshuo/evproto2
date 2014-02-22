@@ -77,7 +77,7 @@ void* RpcServer::runLoop(void* ptr)
 void RpcServer::registerService(gpb::Service* service)
 {
   const google::protobuf::ServiceDescriptor* desc = service->GetDescriptor();
-  services_[desc->full_name()] = service;
+  services_[desc->name()] = service;
 }
 
 void RpcServer::onConnect(evutil_socket_t fd)
